@@ -1,0 +1,6 @@
+{
+  "name": "GENESIS Kitchen",
+  "description": "Ultimate On-Device ROM Lab",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
