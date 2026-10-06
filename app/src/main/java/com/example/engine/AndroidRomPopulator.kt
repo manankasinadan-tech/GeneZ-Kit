@@ -130,6 +130,8 @@ object AndroidRomPopulator {
     val apexDir = File(systemRoot, "apex").apply { mkdirs() }
     val lib64Dir = File(systemRoot, "lib64").apply { mkdirs() }
     val overlayDir = File(systemRoot, "product/overlay").apply { mkdirs() }
+    val productAppDir = File(systemRoot, "product/app").apply { mkdirs() }
+    val productPrivAppDir = File(systemRoot, "product/priv-app").apply { mkdirs() }
 
     // 1. Binaries in /bin
     listOf(
@@ -138,6 +140,17 @@ object AndroidRomPopulator {
       "installd", "dex2oat64", "cmd", "pm", "am"
     ).forEach { binName ->
       createValidElf64(File(binDir, binName), binName)
+    }
+
+    // 1b. Shared Libraries in /lib64 (NEVER EMPTY)
+    listOf(
+      "libc.so", "libm.so", "libdl.so", "liblog.so", "libutils.so",
+      "libcutils.so", "libandroid_runtime.so", "libbinder.so", "libgui.so",
+      "libui.so", "libhardware.so", "libart.so", "libnetd_client.so",
+      "libsqlite.so", "libcrypto.so", "libssl.so", "libz.so",
+      "libselinux.so", "libbase.so", "libmedia.so", "libhidlbase.so"
+    ).forEach { soName ->
+      createValidElf64(File(lib64Dir, soName), soName)
     }
 
     // 2. Framework JARs in /framework
@@ -157,20 +170,29 @@ object AndroidRomPopulator {
     createValidApk(File(privAppDir, "SystemUI/SystemUI.apk"), "com.android.systemui", "SystemUI")
     createValidApk(File(privAppDir, "TelephonyProvider/TelephonyProvider.apk"), "com.android.providers.telephony", "TelephonyProvider")
     createValidApk(File(privAppDir, "PermissionController/PermissionController.apk"), "com.android.permissioncontroller", "PermissionController")
+    createValidApk(File(privAppDir, "Launcher3QuickStep/Launcher3QuickStep.apk"), "com.android.launcher3", "Launcher3QuickStep")
+    createValidApk(File(privAppDir, "NetworkStack/NetworkStack.apk"), "com.android.networkstack", "NetworkStack")
+    createValidApk(File(privAppDir, "PackageInstaller/PackageInstaller.apk"), "com.android.packageinstaller", "PackageInstaller")
 
     // 4. User System Apps in /app
     createValidApk(File(appDir, "Camera2/Camera2.apk"), "com.android.camera2", "Camera2")
     createValidApk(File(appDir, "Gallery2/Gallery2.apk"), "com.android.gallery3d", "Gallery2")
     createValidApk(File(appDir, "Dialer/Dialer.apk"), "com.android.dialer", "Dialer")
+    createValidApk(File(appDir, "DeskClock/DeskClock.apk"), "com.android.deskclock", "DeskClock")
+    createValidApk(File(appDir, "Calculator/Calculator.apk"), "com.android.calculator2", "Calculator")
+    createValidApk(File(appDir, "DocumentsUI/DocumentsUI.apk"), "com.android.documentsui", "DocumentsUI")
+    createValidApk(File(appDir, "Messaging/Messaging.apk"), "com.android.messaging", "Messaging")
 
     // 5. APEX containers
     listOf("com.android.runtime.apex", "com.android.art.apex", "com.android.media.apex").forEach { apex ->
       createValidApk(File(apexDir, apex), "com.google.android.apex", apex)
     }
 
-    // 6. Overlays
+    // 6. Overlays & Product
     createValidApk(File(overlayDir, "framework-res__auto_generated_rro_product.apk"), "android.overlay", "FrameworkOverlay")
     createValidApk(File(overlayDir, "TucanaFODOverlay.apk"), "com.xiaomi.overlay.tucana.fod", "TucanaFODOverlay")
+    createValidApk(File(productAppDir, "TrichromeLibrary/TrichromeLibrary.apk"), "com.google.android.trichromelibrary", "TrichromeLibrary")
+    createValidApk(File(productPrivAppDir, "AndroidAutoStub/AndroidAutoStub.apk"), "com.google.android.projection.gearhead", "AndroidAutoStub")
 
     // 7. SELinux & Security
     File(selinuxDir, "plat_file_contexts").writeText(
