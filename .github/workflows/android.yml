@@ -10,7 +10,6 @@ on:
 jobs:
   build:
     name: Build Android APK
-    # Use explicit ubuntu-22.04 runner pool to prevent 'ubuntu-latest' runner acquisition & migration timeout errors
     runs-on: ubuntu-22.04
     timeout-minutes: 20
 
@@ -25,8 +24,23 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Make gradlew executable
-      run: chmod +x gradlew || true
+    - name: Prepare keystore & environment files
+      run: |
+        # Restore debug.keystore required by debug signingConfig
+        if [ -f "debug.keystore.base64" ]; then
+          base64 -d debug.keystore.base64 > debug.keystore
+          echo "debug.keystore restored from base64"
+        elif [ ! -f "debug.keystore" ]; then
+          keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey -keypass android -storepass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          echo "debug.keystore freshly generated"
+        fi
+
+        # Prepare .env for secrets plugin
+        if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+          cp .env.example .env
+        fi
+
+        chmod +x gradlew || true
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon --stacktrace
