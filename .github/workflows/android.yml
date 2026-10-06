@@ -9,8 +9,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: Build Android APK
+    # Use explicit ubuntu-22.04 runner pool to prevent 'ubuntu-latest' runner acquisition & migration timeout errors
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
 
     steps:
     - name: Checkout repository
@@ -21,19 +23,13 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: gradle
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
-
-    - name: Ensure gradlew is executable
-      run: |
-        if [ ! -f "gradlew" ]; then
-          gradle wrapper
-        fi
-        chmod +x gradlew
+    - name: Make gradlew executable
+      run: chmod +x gradlew || true
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
