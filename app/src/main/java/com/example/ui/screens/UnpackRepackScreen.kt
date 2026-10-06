@@ -1,14 +1,13 @@
 package com.example.ui.screens
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,14 +25,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.PhonelinkSetup
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,6 +45,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
@@ -55,13 +60,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.ActionType
 import com.example.model.RomFormat
 import com.example.model.UnpackedProject
 import com.example.ui.components.CyberBadge
@@ -75,13 +80,17 @@ fun UnpackRepackScreen(
   hasStoragePermission: Boolean,
   isBusy: Boolean,
   busyMessage: String,
+  unpackProgress: Float?,
+  unpackStepText: String,
   onSelectProject: (UnpackedProject) -> Unit,
   onDeleteProject: (UnpackedProject) -> Unit,
   onCleanTempProjects: () -> Unit,
   onUnpackUri: (uri: Uri, fileName: String) -> Unit,
   onRepack: (project: UnpackedProject, format: RomFormat) -> Unit,
+  onLoadSampleDemo: () -> Unit,
   onRefreshWorkspace: () -> Unit,
-  onRefreshStoragePermission: () -> Unit
+  onRefreshStoragePermission: () -> Unit,
+  onNavigateToAction: (ActionType) -> Unit
 ) {
   var selectedTab by remember { mutableIntStateOf(0) } // 0: Unpack, 1: Repack
   val context = LocalContext.current
@@ -89,6 +98,7 @@ fun UnpackRepackScreen(
   // Selected picked file state
   var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
   var selectedFileName by remember { mutableStateOf<String?>(null) }
+  var selectedFileSizeStr by remember { mutableStateOf<String?>(null) }
   var chosenRepackFormat by remember { mutableStateOf(RomFormat.AUTO_DETECT) }
 
   // Real Android File Picker Launcher
@@ -97,16 +107,25 @@ fun UnpackRepackScreen(
   ) { uri: Uri? ->
     if (uri != null) {
       selectedFileUri = uri
-      var name = "custom_image.img"
+      var name = "firmware_image.img"
+      var sizeBytes: Long = 0
       try {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
           val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+          val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
           if (nameIndex != -1 && cursor.moveToFirst()) {
             name = cursor.getString(nameIndex)
+          }
+          if (sizeIndex != -1) {
+            sizeBytes = cursor.getLong(sizeIndex)
           }
         }
       } catch (_: Exception) {}
       selectedFileName = name
+      selectedFileSizeStr = if (sizeBytes > 0) {
+        val mb = sizeBytes / (1024.0 * 1024.0)
+        String.format("%.1f Mo", mb)
+      } else null
     }
   }
 
@@ -119,19 +138,19 @@ fun UnpackRepackScreen(
     item {
       SectionHeader(
         title = "Unpack & Repack Studio",
-        subtitle = "Sélection de fichier binaire • UKA & Tool-Tree",
+        subtitle = "Sélection de fichier binaire • Moteur UKA & Tool-Tree",
         icon = Icons.Rounded.Inventory2
       )
     }
 
-    // Storage Permission Banner if not granted on Android 11+
-    if (!hasStoragePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    // Storage Permission Warning & Action Banner
+    if (!hasStoragePermission) {
       item {
         Card(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(16.dp),
           colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
           )
         ) {
           Column(modifier = Modifier.padding(14.dp)) {
@@ -151,18 +170,25 @@ fun UnpackRepackScreen(
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-              text = "Pour lire et écrire les fichiers ROM dans /sdcard/FORGER, accordez l'accès complet aux fichiers.",
-              fontSize = 11.5.sp,
+              text = "GENESIS Kitchen a besoin de l'autorisation de stockage pour lire et écrire dans /sdcard/FORGER.",
+              fontSize = 12.sp,
               color = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(modifier = Modifier.height(10.dp))
             Button(
               onClick = {
                 try {
-                  val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:${context.packageName}")
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                      data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                  } else {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                      data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
                   }
-                  context.startActivity(intent)
                 } catch (_: Exception) {
                   val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                   context.startActivity(intent)
@@ -176,13 +202,77 @@ fun UnpackRepackScreen(
             ) {
               Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("Autoriser l'accès aux fichiers", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              Text("Accorder l'accès aux fichiers", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
           }
         }
       }
     }
 
+    // Active Processing Card with Progress Bar
+    if (isBusy) {
+      item {
+        Card(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(20.dp),
+          colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+          )
+        ) {
+          Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(28.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp
+              )
+              Spacer(modifier = Modifier.width(14.dp))
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = busyMessage,
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                if (unpackStepText.isNotBlank()) {
+                  Text(
+                    text = unpackStepText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                  )
+                }
+              }
+              if (unpackProgress != null) {
+                Text(
+                  text = "${(unpackProgress * 100).toInt()}%",
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 14.sp,
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+            }
+
+            if (unpackProgress != null) {
+              Spacer(modifier = Modifier.height(12.dp))
+              LinearProgressIndicator(
+                progress = { unpackProgress },
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(6.dp)
+                  .clip(CircleShape),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+              )
+            }
+          }
+        }
+      }
+    }
+
+    // Mode Tabs: Unpack vs Repack
     item {
       TabRow(
         selectedTabIndex = selectedTab,
@@ -206,7 +296,7 @@ fun UnpackRepackScreen(
     }
 
     if (selectedTab == 0) {
-      // 1. FILE PICKER UNPACK PANEL
+      // 1. UNPACK PANEL
       item {
         Card(
           modifier = Modifier.fillMaxWidth(),
@@ -220,7 +310,7 @@ fun UnpackRepackScreen(
               verticalAlignment = Alignment.CenterVertically
             ) {
               Text(
-                text = "Choisir une image à décompresser",
+                text = "Choisir une image ROM à décompresser",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
               )
@@ -229,7 +319,7 @@ fun UnpackRepackScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-              text = "Sélectionnez n'importe quel fichier (.img, .bin, .raw, GSI, super partition, payload) depuis votre téléphone. Le format et la partition sont identifiés automatiquement.",
+              text = "Sélectionnez n'importe quel fichier (.img, .bin, .raw, .zip, GSI, payload) depuis votre téléphone. Le format (EROFS, EXT4, Sparse) et la partition sont identifiés automatiquement.",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -252,36 +342,47 @@ fun UnpackRepackScreen(
               Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(22.dp))
               Spacer(modifier = Modifier.width(10.dp))
               Text(
-                text = if (selectedFileName != null) "Changer de fichier" else "Parcourir le téléphone...",
+                text = if (selectedFileName != null) "Changer de fichier image" else "Parcourir le téléphone (.img, .bin, GSI, .zip)",
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
+                fontSize = 13.5.sp
               )
             }
 
-            // DISPLAY SELECTED FILE DETAILS
+            // SELECTED FILE DETAILS CARD & UNPACK TRIGGER
             if (selectedFileName != null && selectedFileUri != null) {
               Spacer(modifier = Modifier.height(14.dp))
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .clip(RoundedCornerShape(12.dp))
+                  .clip(RoundedCornerShape(14.dp))
                   .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                  .padding(12.dp)
+                  .padding(14.dp)
               ) {
                 Column {
-                  Text(
-                    text = "Fichier sélectionné :",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                  )
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      text = "Fichier sélectionné :",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.primary,
+                      fontWeight = FontWeight.Bold
+                    )
+                    if (selectedFileSizeStr != null) {
+                      CyberBadge(text = selectedFileSizeStr!!, color = MaterialTheme.colorScheme.secondary)
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
                   Text(
                     text = selectedFileName!!,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                   )
+                  Spacer(modifier = Modifier.height(4.dp))
                   Text(
-                    text = "Dossier de destination : FORGER/UNPACKED/${selectedFileName!!.substringBeforeLast(".")}",
+                    text = "Dossier cible : FORGER/UNPACKED/${selectedFileName!!.substringBeforeLast(".")}",
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -297,7 +398,7 @@ fun UnpackRepackScreen(
                 },
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(48.dp)
+                  .height(50.dp)
                   .testTag("btn_execute_unpack"),
                 colors = ButtonDefaults.buttonColors(
                   containerColor = MaterialTheme.colorScheme.primary,
@@ -315,7 +416,85 @@ fun UnpackRepackScreen(
         }
       }
 
-      // PRESET IMAGES TO TEST IMMEDIATELY
+      // ACTIVE PROJECT SUMMARY (IF AVAILABLE)
+      if (selectedProject != null) {
+        item {
+          Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+          ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Projet actif décompressé",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+                CyberBadge(text = selectedProject.originalFormat.displayName, color = MaterialTheme.colorScheme.primary)
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+              Text("• Dossier : ${selectedProject.name}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+              Text("• Partition : ${selectedProject.partitionName} • Fichiers répertoriés : ${selectedProject.fileCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("• Chemin : ${selectedProject.path}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+              Spacer(modifier = Modifier.height(14.dp))
+              Text(
+                text = "Actions rapides sur ce projet :",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
+              )
+              Spacer(modifier = Modifier.height(8.dp))
+
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                OutlinedButton(
+                  onClick = { onNavigateToAction(ActionType.EXPLORER) },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(10.dp)
+                ) {
+                  Icon(Icons.Rounded.AccountTree, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Explorer", fontSize = 11.sp)
+                }
+
+                OutlinedButton(
+                  onClick = { onNavigateToAction(ActionType.GSI_PORTER) },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(10.dp)
+                ) {
+                  Icon(Icons.Rounded.PhonelinkSetup, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("GSI Porter", fontSize = 11.sp)
+                }
+
+                OutlinedButton(
+                  onClick = { onNavigateToAction(ActionType.SIGNER) },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(10.dp)
+                ) {
+                  Icon(Icons.Rounded.VerifiedUser, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Signer", fontSize = 11.sp)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // OPTIONAL DEMO / SAMPLE LOADER
       item {
         Card(
           modifier = Modifier.fillMaxWidth(),
@@ -324,23 +503,25 @@ fun UnpackRepackScreen(
         ) {
           Column(modifier = Modifier.padding(14.dp)) {
             Text(
-              text = "Ou tester avec un gabarit pré-inclus :",
+              text = "Besoin d'un gabarit de démonstration ?",
               style = MaterialTheme.typography.labelSmall,
               fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              listOf("gsi_lineage21_arm64.img", "tucana_vendor.img").forEach { sample ->
-                OutlinedButton(
-                  onClick = {
-                    selectedFileName = sample
-                    selectedFileUri = Uri.parse("android.resource://${context.packageName}/raw/$sample")
-                  },
-                  shape = RoundedCornerShape(10.dp)
-                ) {
-                  Text(sample, fontSize = 11.sp)
-                }
-              }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+              text = "Si vous n'avez pas de fichier ROM sous la main, vous pouvez générer un modèle de test Xiaomi Tucana complet avec APKs, binaires et HAL FOD.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+              onClick = onLoadSampleDemo,
+              enabled = !isBusy,
+              shape = RoundedCornerShape(10.dp)
+            ) {
+              Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Générer l'exemple Xiaomi Tucana (AOSP 14)", fontSize = 11.5.sp)
             }
           }
         }
@@ -496,31 +677,36 @@ fun UnpackRepackScreen(
             }
           }
         }
-      }
-    }
-
-    if (isBusy) {
-      item {
-        Card(
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(16.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-        ) {
-          Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+      } else {
+        item {
+          Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
           ) {
-            CircularProgressIndicator(
-              modifier = Modifier.size(24.dp),
-              color = MaterialTheme.colorScheme.primary,
-              strokeWidth = 2.5.dp
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-              text = busyMessage,
-              style = MaterialTheme.typography.bodyMedium,
-              fontWeight = FontWeight.Medium
-            )
+            Column(
+              modifier = Modifier.padding(24.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              Icon(
+                Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp)
+              )
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(
+                text = "Aucun dossier à repacker",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Décompressez d'abord une image dans l'onglet 'UNPACK IMAGE' pour pouvoir la repacker.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
           }
         }
       }

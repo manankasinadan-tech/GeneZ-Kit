@@ -94,6 +94,12 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
   private val _busyMessage = MutableStateFlow("")
   val busyMessage: StateFlow<String> = _busyMessage.asStateFlow()
 
+  private val _unpackProgress = MutableStateFlow<Float?>(null)
+  val unpackProgress: StateFlow<Float?> = _unpackProgress.asStateFlow()
+
+  private val _unpackStepText = MutableStateFlow("")
+  val unpackStepText: StateFlow<String> = _unpackStepText.asStateFlow()
+
   init {
     loadInitialData()
   }
@@ -214,13 +220,51 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _isBusy.value = true
       _busyMessage.value = "Décompression de $displayName..."
+      _unpackProgress.value = 0.05f
+      _unpackStepText.value = "Initialisation de la décompression..."
       try {
-        val proj = workspace.unpackFromUri(uri, displayName) { addLog(it) }
+        val proj = workspace.unpackFromUri(
+          uri = uri,
+          displayName = displayName,
+          onProgress = { p, step ->
+            _unpackProgress.value = p
+            _unpackStepText.value = step
+          },
+          onLog = { addLog(it) }
+        )
         refreshProjects()
         _selectedProject.value = proj
         loadArchitectureTree(proj)
+        _availableApks.value = signer.listAvailableApks()
+        addLog(TerminalEntry(level = LogLevel.SUCCESS, message = "Projet '${proj.name}' prêt (${proj.fileCount} fichiers extraits).", tag = "UNPACK"))
+      } catch (e: Exception) {
+        addLog(TerminalEntry(level = LogLevel.ERROR, message = "Erreur décompression : ${e.localizedMessage}", tag = "UNPACK"))
       } finally {
         _isBusy.value = false
+        _unpackProgress.value = null
+        _unpackStepText.value = ""
+      }
+    }
+  }
+
+  fun loadSampleDemoProject() {
+    viewModelScope.launch {
+      _isBusy.value = true
+      _busyMessage.value = "Déploiement du projet de référence Xiaomi Tucana..."
+      _unpackProgress.value = 0.20f
+      _unpackStepText.value = "Génération de l'arborescence AOSP Tucana..."
+      try {
+        val proj = workspace.seedSampleProject { addLog(it) }
+        refreshProjects()
+        _selectedProject.value = proj
+        loadArchitectureTree(proj)
+        _availableApks.value = signer.listAvailableApks()
+      } catch (e: Exception) {
+        addLog(TerminalEntry(level = LogLevel.ERROR, message = "Erreur déploiement modèle : ${e.localizedMessage}", tag = "WORKSPACE"))
+      } finally {
+        _isBusy.value = false
+        _unpackProgress.value = null
+        _unpackStepText.value = ""
       }
     }
   }
@@ -229,13 +273,25 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _isBusy.value = true
       _busyMessage.value = "Détection et extraction automatique..."
+      _unpackProgress.value = 0.10f
+      _unpackStepText.value = "Analyse de $sourceName..."
       try {
-        val proj = workspace.autoUnpackImage(sourceName) { addLog(it) }
+        val proj = workspace.autoUnpackImage(
+          sourceName = sourceName,
+          onProgress = { p, step ->
+            _unpackProgress.value = p
+            _unpackStepText.value = step
+          },
+          onLog = { addLog(it) }
+        )
         refreshProjects()
         _selectedProject.value = proj
         loadArchitectureTree(proj)
+        _availableApks.value = signer.listAvailableApks()
       } finally {
         _isBusy.value = false
+        _unpackProgress.value = null
+        _unpackStepText.value = ""
       }
     }
   }
@@ -437,7 +493,8 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  private fun refreshProjects() {
+  fun refreshProjects() {
     _unpackedProjects.value = workspace.listUnpackedProjects()
+    _availableApks.value = signer.listAvailableApks()
   }
 }

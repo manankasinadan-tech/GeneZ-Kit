@@ -24,7 +24,8 @@ enum class RomFormat(val displayName: String, val extension: String, val descrip
   SPARSE_IMG("Sparse Image", ".img", "Format sparse décompressé par fastboot"),
   RAW_IMG("Raw Partition", ".raw", "Image brute bloc sans entête sparse"),
   SUPER_IMG("Super Container", ".img", "Conteneur dynamique multi-partitions LP"),
-  PAYLOAD_BIN("OTA Payload", ".bin", "Archive de mise à jour A/B Android")
+  PAYLOAD_BIN("OTA Payload", ".bin", "Archive de mise à jour A/B Android"),
+  ZIP_OTA("Archive ZIP", ".zip", "Package de mise à jour flashable TWRP/Recovery")
 }
 
 data class UnpackedProject(

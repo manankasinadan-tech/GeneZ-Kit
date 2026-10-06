@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,11 +36,14 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PhonelinkSetup
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,17 +56,22 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -77,9 +89,67 @@ fun MainScreen(viewModel: GenesisViewModel) {
   val isRoot by viewModel.isRootEnabled.collectAsState()
   val themeMode by viewModel.themeMode.collectAsState()
   val logs by viewModel.logs.collectAsState()
+  val hasStoragePermission by viewModel.hasStoragePermission.collectAsState()
+  val context = LocalContext.current
+
+  var showPermissionDialog by remember {
+    mutableStateOf(!hasStoragePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+  }
 
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
   val scope = rememberCoroutineScope()
+
+  if (showPermissionDialog && !hasStoragePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    AlertDialog(
+      onDismissRequest = { showPermissionDialog = false },
+      icon = {
+        Icon(
+          Icons.Rounded.Security,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(32.dp)
+        )
+      },
+      title = {
+        Text("Autorisation de stockage (FORGER)", fontWeight = FontWeight.Bold)
+      },
+      text = {
+        Text(
+          "Pour décompresser des images de ROM (.img, GSI, .bin), gérer /sdcard/FORGER, et signer vos APKs, GENESIS Kitchen a besoin de l'accès à tous les fichiers.",
+          fontSize = 13.5.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showPermissionDialog = false
+            try {
+              val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:${context.packageName}")
+              }
+              context.startActivity(intent)
+            } catch (_: Exception) {
+              val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+              context.startActivity(intent)
+            }
+          },
+          shape = RoundedCornerShape(12.dp)
+        ) {
+          Text("Accorder l'accès")
+        }
+      },
+      dismissButton = {
+        OutlinedButton(
+          onClick = { showPermissionDialog = false },
+          shape = RoundedCornerShape(12.dp)
+        ) {
+          Text("Plus tard")
+        }
+      },
+      shape = RoundedCornerShape(20.dp)
+    )
+  }
 
   ModalNavigationDrawer(
     drawerState = drawerState,

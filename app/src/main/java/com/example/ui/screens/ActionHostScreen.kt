@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.example.model.ActionType
 import com.example.viewmodel.GenesisViewModel
 
@@ -9,18 +11,20 @@ fun ActionHostScreen(
   viewModel: GenesisViewModel,
   currentAction: ActionType
 ) {
-  val projects = viewModel.unpackedProjects.value
-  val selectedProject = viewModel.selectedProject.value
-  val apks = viewModel.availableApks.value
-  val keys = viewModel.existingKeys.value
-  val drRoidReport = viewModel.latestDrRoidReport.value
-  val fodReport = viewModel.latestFodReport.value
-  val isBusy = viewModel.isBusy.value
-  val busyMsg = viewModel.busyMessage.value
-  val isRoot = viewModel.isRootEnabled.value
-  val archTree = viewModel.architectureTree.value
-  val selectedNode = viewModel.selectedArchitectureNode.value
-  val hasStoragePerm = viewModel.hasStoragePermission.value
+  val projects by viewModel.unpackedProjects.collectAsState()
+  val selectedProject by viewModel.selectedProject.collectAsState()
+  val apks by viewModel.availableApks.collectAsState()
+  val keys by viewModel.existingKeys.collectAsState()
+  val drRoidReport by viewModel.latestDrRoidReport.collectAsState()
+  val fodReport by viewModel.latestFodReport.collectAsState()
+  val isBusy by viewModel.isBusy.collectAsState()
+  val busyMsg by viewModel.busyMessage.collectAsState()
+  val unpackProgress by viewModel.unpackProgress.collectAsState()
+  val unpackStepText by viewModel.unpackStepText.collectAsState()
+  val isRoot by viewModel.isRootEnabled.collectAsState()
+  val archTree by viewModel.architectureTree.collectAsState()
+  val selectedNode by viewModel.selectedArchitectureNode.collectAsState()
+  val hasStoragePerm by viewModel.hasStoragePermission.collectAsState()
 
   when (currentAction) {
     ActionType.UNPACK_REPACK -> {
@@ -30,13 +34,17 @@ fun ActionHostScreen(
         hasStoragePermission = hasStoragePerm,
         isBusy = isBusy,
         busyMessage = busyMsg,
+        unpackProgress = unpackProgress,
+        unpackStepText = unpackStepText,
         onSelectProject = { viewModel.selectProject(it) },
         onDeleteProject = { viewModel.deleteProject(it) },
         onCleanTempProjects = { viewModel.cleanTempProjects() },
         onUnpackUri = { uri, fileName -> viewModel.unpackFromUri(uri, fileName) },
         onRepack = { proj, fmt -> viewModel.repackProject(proj, fmt) },
-        onRefreshWorkspace = { viewModel.loadInitialData() },
-        onRefreshStoragePermission = { viewModel.refreshStoragePermission() }
+        onLoadSampleDemo = { viewModel.loadSampleDemoProject() },
+        onRefreshWorkspace = { viewModel.refreshProjects() },
+        onRefreshStoragePermission = { viewModel.refreshStoragePermission() },
+        onNavigateToAction = { viewModel.setAction(it) }
       )
     }
 
