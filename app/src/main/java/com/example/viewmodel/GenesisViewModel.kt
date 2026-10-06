@@ -1,6 +1,9 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.engine.ArchitectureExplorerEngine
@@ -53,6 +56,10 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
   private val _isRootEnabled = MutableStateFlow(false)
   val isRootEnabled: StateFlow<Boolean> = _isRootEnabled.asStateFlow()
 
+  // Storage permission status
+  private val _hasStoragePermission = MutableStateFlow(checkStoragePermissionInternal())
+  val hasStoragePermission: StateFlow<Boolean> = _hasStoragePermission.asStateFlow()
+
   // Data States
   private val _unpackedProjects = MutableStateFlow<List<UnpackedProject>>(emptyList())
   val unpackedProjects: StateFlow<List<UnpackedProject>> = _unpackedProjects.asStateFlow()
@@ -91,6 +98,22 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
     loadInitialData()
   }
 
+  private fun checkStoragePermissionInternal(): Boolean {
+    return try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+      } else {
+        true
+      }
+    } catch (_: Throwable) {
+      false
+    }
+  }
+
+  fun refreshStoragePermission() {
+    _hasStoragePermission.value = checkStoragePermissionInternal()
+  }
+
   fun setTab(tab: VoletTab) {
     _currentTab.value = tab
   }
@@ -115,6 +138,30 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
   fun selectProject(project: UnpackedProject) {
     _selectedProject.value = project
     loadArchitectureTree(project)
+  }
+
+  fun deleteProject(project: UnpackedProject) {
+    viewModelScope.launch {
+      workspace.deleteProject(project.id)
+      addLog(TerminalEntry(level = LogLevel.INFO, message = "Projet supprimé : ${project.name}", tag = "WORKSPACE"))
+      refreshProjects()
+      if (_selectedProject.value?.id == project.id) {
+        _selectedProject.value = _unpackedProjects.value.firstOrNull()
+        _selectedProject.value?.let { loadArchitectureTree(it) }
+      }
+    }
+  }
+
+  fun cleanTempProjects() {
+    viewModelScope.launch {
+      val removed = workspace.cleanTempProjects()
+      addLog(TerminalEntry(level = LogLevel.SUCCESS, message = "Nettoyage : $removed projets temporaires supprimés.", tag = "WORKSPACE"))
+      refreshProjects()
+      if (_selectedProject.value != null && !_unpackedProjects.value.any { it.id == _selectedProject.value?.id }) {
+        _selectedProject.value = _unpackedProjects.value.firstOrNull()
+        _selectedProject.value?.let { loadArchitectureTree(it) }
+      }
+    }
   }
 
   fun loadArchitectureTree(project: UnpackedProject) {
@@ -160,6 +207,21 @@ class GenesisViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       terminalExecutor.executeCommand(cmd, _isRootEnabled.value) { addLog(it) }
       refreshProjects()
+    }
+  }
+
+  fun unpackFromUri(uri: Uri, displayName: String) {
+    viewModelScope.launch {
+      _isBusy.value = true
+      _busyMessage.value = "Décompression de $displayName..."
+      try {
+        val proj = workspace.unpackFromUri(uri, displayName) { addLog(it) }
+        refreshProjects()
+        _selectedProject.value = proj
+        loadArchitectureTree(proj)
+      } finally {
+        _isBusy.value = false
+      }
     }
   }
 

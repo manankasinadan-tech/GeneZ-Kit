@@ -20,18 +20,23 @@ fun ActionHostScreen(
   val isRoot = viewModel.isRootEnabled.value
   val archTree = viewModel.architectureTree.value
   val selectedNode = viewModel.selectedArchitectureNode.value
+  val hasStoragePerm = viewModel.hasStoragePermission.value
 
   when (currentAction) {
     ActionType.UNPACK_REPACK -> {
       UnpackRepackScreen(
         projects = projects,
         selectedProject = selectedProject,
+        hasStoragePermission = hasStoragePerm,
         isBusy = isBusy,
         busyMessage = busyMsg,
         onSelectProject = { viewModel.selectProject(it) },
-        onAutoUnpack = { sourceName -> viewModel.autoUnpackImage(sourceName) },
+        onDeleteProject = { viewModel.deleteProject(it) },
+        onCleanTempProjects = { viewModel.cleanTempProjects() },
+        onUnpackUri = { uri, fileName -> viewModel.unpackFromUri(uri, fileName) },
         onRepack = { proj, fmt -> viewModel.repackProject(proj, fmt) },
-        onImportFolder = { viewModel.loadInitialData() }
+        onRefreshWorkspace = { viewModel.loadInitialData() },
+        onRefreshStoragePermission = { viewModel.refreshStoragePermission() }
       )
     }
 
